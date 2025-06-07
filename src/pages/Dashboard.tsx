@@ -11,6 +11,8 @@ import {
     Calendar,
     ChevronDown
 } from 'lucide-react';
+import { useSocialMediaData } from '../hooks/useSocialMediaData';
+import { useWebsiteData } from '../hooks/useWebsiteData';
 
 // Date range state interface
 interface DateRange {
@@ -834,6 +836,17 @@ const Dashboard: React.FC = () => {
         compareOption: 'Last Month'
     });
 
+    // 使用真實數據 hooks
+    const { data: socialMediaData, loading: socialLoading, error: socialError } = useSocialMediaData();
+    const { 
+        metrics: websiteMetrics, 
+        realtimeUsers, 
+        topPages, 
+        trafficTrend, 
+        loading: websiteLoading, 
+        error: websiteError 
+    } = useWebsiteData();
+
     const currentPlatformData = platformData[selectedPlatform as keyof typeof platformData];
     const currentAdCampaigns = paidAdsData[selectedAdPlatform as keyof typeof paidAdsData];
 
@@ -855,6 +868,83 @@ const Dashboard: React.FC = () => {
             <div className="text-2xl font-bold text-gray-900">{value}</div>
         </div>
     );
+
+    // 加載狀態組件
+    const LoadingCard = () => (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 animate-pulse">
+            <div className="h-4 bg-gray-200 rounded mb-2"></div>
+            <div className="h-8 bg-gray-200 rounded"></div>
+        </div>
+    );
+
+    // 錯誤狀態組件
+    const ErrorCard = ({ message }: { message: string }) => (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="text-red-800 text-sm">{message}</div>
+        </div>
+    );
+
+    // 處理真實社交媒體數據
+    const getRealSocialMediaMetrics = () => {
+        if (!socialMediaData || socialMediaData.length === 0) {
+            return null;
+        }
+
+        // 按平台分組數據
+        const platformMetrics = socialMediaData.reduce((acc, item) => {
+            const platformName = item.social_media_platforms?.platform_name || 'Unknown';
+            if (!acc[platformName]) {
+                acc[platformName] = [];
+            }
+            acc[platformName].push(item);
+            return acc;
+        }, {} as Record<string, typeof socialMediaData>);
+
+        // 獲取當前選擇平台的最新數據
+        const currentData = platformMetrics[selectedPlatform];
+        if (!currentData || currentData.length === 0) {
+            return null;
+        }
+
+        const latest = currentData[0]; // 最新數據
+        const previous = currentData[1]; // 前一天數據
+
+        const calculateChange = (current: number, prev: number) => {
+            if (!prev) return '+0%';
+            const change = ((current - prev) / prev) * 100;
+            return `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+        };
+
+        return {
+            impressions: {
+                value: latest.impressions?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.impressions || 0, previous.impressions || 0) : '+0%',
+                isPositive: !previous || (latest.impressions || 0) >= (previous.impressions || 0)
+            },
+            organicImpressions: {
+                value: latest.organic_impressions?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.organic_impressions || 0, previous.organic_impressions || 0) : '+0%',
+                isPositive: !previous || (latest.organic_impressions || 0) >= (previous.organic_impressions || 0)
+            },
+            engagements: {
+                value: latest.engagements?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.engagements || 0, previous.engagements || 0) : '+0%',
+                isPositive: !previous || (latest.engagements || 0) >= (previous.engagements || 0)
+            },
+            engagementRate: {
+                value: `${((latest.engagement_rate || 0) * 100).toFixed(2)}%`,
+                change: previous ? calculateChange((latest.engagement_rate || 0) * 100, (previous.engagement_rate || 0) * 100) : '+0%',
+                isPositive: !previous || (latest.engagement_rate || 0) >= (previous.engagement_rate || 0)
+            },
+            followers: {
+                value: latest.followers?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.followers || 0, previous.followers || 0) : '+0%',
+                isPositive: !previous || (latest.followers || 0) >= (previous.followers || 0)
+            }
+        };
+    };
+
+    const realSocialMetrics = getRealSocialMediaMetrics();
 
     return (
         <div className="min-h-screen bg-gray-50 p-6">
