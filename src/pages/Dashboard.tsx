@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/UI/tabs';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import {
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useSocialMediaData } from '../hooks/useSocialMediaData';
 import { useWebsiteData } from '../hooks/useWebsiteData';
+import { useEDMData } from '../hooks/useEDMData';
 
 // Date range state interface
 interface DateRange {
@@ -837,7 +838,7 @@ const Dashboard: React.FC = () => {
     });
 
     // 使用真實數據 hooks
-    const { data: socialMediaData, loading: socialLoading, error: socialError } = useSocialMediaData();
+    const { data: socialMediaData, platforms, loading: socialLoading, error: socialError } = useSocialMediaData();
     const { 
         metrics: websiteMetrics, 
         realtimeUsers, 
@@ -846,6 +847,31 @@ const Dashboard: React.FC = () => {
         loading: websiteLoading, 
         error: websiteError 
     } = useWebsiteData();
+    const {
+        campaigns: edmCampaigns,
+        summary: edmSummary,
+        folderStats: edmFolderStats,
+        highPerformanceCampaigns: edmHighPerf,
+        recentCampaigns: edmRecent,
+        loading: edmLoading,
+        error: edmError
+    } = useEDMData();
+
+    // 從真實資料中獲取可用平台
+    const availablePlatforms = platforms.map(p => p.platform_name);
+    
+    // 確保選擇的平台存在於真實資料中
+    useEffect(() => {
+        if (availablePlatforms.length > 0 && !availablePlatforms.includes(selectedPlatform)) {
+            setSelectedPlatform(availablePlatforms[0]);
+        }
+    }, [availablePlatforms, selectedPlatform]);
+
+    // 獲取當前平台的顏色
+    const getCurrentPlatformColor = () => {
+        const platform = platforms.find(p => p.platform_name === selectedPlatform);
+        return platform?.platform_color || '#000000';
+    };
 
     const currentPlatformData = platformData[selectedPlatform as keyof typeof platformData];
     const currentAdCampaigns = paidAdsData[selectedAdPlatform as keyof typeof paidAdsData];
@@ -890,9 +916,9 @@ const Dashboard: React.FC = () => {
             return null;
         }
 
-        // 按平台分組數據
+        // 按平台分組數據 - 使用新的資料結構
         const platformMetrics = socialMediaData.reduce((acc, item) => {
-            const platformName = item.social_media_platforms?.platform_name || 'Unknown';
+            const platformName = item.platform_name || 'Unknown';
             if (!acc[platformName]) {
                 acc[platformName] = [];
             }
@@ -932,9 +958,9 @@ const Dashboard: React.FC = () => {
                 isPositive: !previous || (latest.engagements || 0) >= (previous.engagements || 0)
             },
             engagementRate: {
-                value: `${((latest.engagement_rate || 0) * 100).toFixed(2)}%`,
-                change: previous ? calculateChange((latest.engagement_rate || 0) * 100, (previous.engagement_rate || 0) * 100) : '+0%',
-                isPositive: !previous || (latest.engagement_rate || 0) >= (previous.engagement_rate || 0)
+                value: `${parseFloat(latest.engagement_rate || '0').toFixed(2)}%`,
+                change: previous ? calculateChange(parseFloat(latest.engagement_rate || '0'), parseFloat(previous.engagement_rate || '0')) : '+0%',
+                isPositive: !previous || parseFloat(latest.engagement_rate || '0') >= parseFloat(previous.engagement_rate || '0')
             },
             followers: {
                 value: latest.followers?.toLocaleString() || '0',
@@ -945,6 +971,75 @@ const Dashboard: React.FC = () => {
     };
 
     const realSocialMetrics = getRealSocialMediaMetrics();
+
+    // 處理真實網站數據
+    const getRealWebsiteMetrics = () => {
+        if (!websiteMetrics || websiteMetrics.length === 0) {
+            return {
+                pageviews: { value: '0', change: '+0%', isPositive: true },
+                activeUsers: { value: '0', change: '+0%', isPositive: true },
+                keyActivities: { value: '0', change: '+0%', isPositive: true },
+                totalEvents: { value: '0', change: '+0%', isPositive: true }
+            };
+        }
+
+        const latest = websiteMetrics[0]; // 最新數據
+        const previous = websiteMetrics[1]; // 前一天數據
+
+        const calculateChange = (current: number, prev: number) => {
+            if (!prev) return '+0%';
+            const change = ((current - prev) / prev) * 100;
+            return `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+        };
+
+        return {
+            pageviews: {
+                value: latest.page_views?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.page_views || 0, previous.page_views || 0) : '+0%',
+                isPositive: !previous || (latest.page_views || 0) >= (previous.page_views || 0)
+            },
+            activeUsers: {
+                value: latest.active_users?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.active_users || 0, previous.active_users || 0) : '+0%',
+                isPositive: !previous || (latest.active_users || 0) >= (previous.active_users || 0)
+            },
+            keyActivities: {
+                value: latest.key_events?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.key_events || 0, previous.key_events || 0) : '+0%',
+                isPositive: !previous || (latest.key_events || 0) >= (previous.key_events || 0)
+            },
+            totalEvents: {
+                value: latest.total_events?.toLocaleString() || '0',
+                change: previous ? calculateChange(latest.total_events || 0, previous.total_events || 0) : '+0%',
+                isPositive: !previous || (latest.total_events || 0) >= (previous.total_events || 0)
+            }
+        };
+    };
+
+    const realWebsiteMetrics = getRealWebsiteMetrics();
+
+    // 處理真實流量趨勢資料
+    const getRealTrafficData = () => {
+        if (!trafficTrend || trafficTrend.length === 0) {
+            return [];
+        }
+
+        // 取最近7天的資料
+        const recentData = trafficTrend.slice(0, 7).reverse(); // 反轉以獲得正確的時間順序
+        
+        return recentData.map((item, index) => {
+            const date = new Date(item.date);
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            
+            return {
+                day: dayNames[date.getDay()],
+                current: item.page_views,
+                previous: index < recentData.length - 1 ? recentData[index + 1]?.page_views || 0 : 0
+            };
+        });
+    };
+
+    const realTrafficData = getRealTrafficData();
 
     return (
         <div className="min-h-screen bg-gray-50 p-6">
@@ -981,7 +1076,7 @@ const Dashboard: React.FC = () => {
                             <div className="mb-6">
                                 <label className="block text-sm font-medium text-gray-700 mb-3">Select Platform</label>
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                                    {Object.keys(platformData).map((platform) => (
+                                    {availablePlatforms.map((platform) => (
                                         <button
                                             key={platform}
                                             onClick={() => setSelectedPlatform(platform)}
@@ -1000,7 +1095,7 @@ const Dashboard: React.FC = () => {
                             <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg mb-6">
                                 <div
                                     className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg"
-                                    style={{ backgroundColor: currentPlatformData.color }}
+                                    style={{ backgroundColor: getCurrentPlatformColor() }}
                                 >
                                     {selectedPlatform[0]}
                                 </div>
@@ -1014,42 +1109,59 @@ const Dashboard: React.FC = () => {
                             <div className="bg-gray-50 rounded-lg p-6 mb-6">
                                 <h3 className="text-lg font-medium text-gray-900 mb-6">Key Performance Metrics</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    <MetricCard
-                                        label="Impressions"
-                                        value={currentPlatformData.metrics.impressions.value}
-                                        change={currentPlatformData.metrics.impressions.change}
-                                        isPositive={currentPlatformData.metrics.impressions.isPositive}
-                                    />
-                                    <MetricCard
-                                        label="Organic Impressions"
-                                        value={currentPlatformData.metrics.organicImpressions.value}
-                                        change={currentPlatformData.metrics.organicImpressions.change}
-                                        isPositive={currentPlatformData.metrics.organicImpressions.isPositive}
-                                    />
-                                    <MetricCard
-                                        label="Engagement Rate"
-                                        value={currentPlatformData.metrics.engagementRate.value}
-                                        change={currentPlatformData.metrics.engagementRate.change}
-                                        isPositive={currentPlatformData.metrics.engagementRate.isPositive}
-                                    />
-                                    <MetricCard
-                                        label="Organic Engagement Rate"
-                                        value={currentPlatformData.metrics.organicEngagementRate.value}
-                                        change={currentPlatformData.metrics.organicEngagementRate.change}
-                                        isPositive={currentPlatformData.metrics.organicEngagementRate.isPositive}
-                                    />
-                                    <MetricCard
-                                        label="Post Link Clicks"
-                                        value={currentPlatformData.metrics.postLinkClicks.value}
-                                        change={currentPlatformData.metrics.postLinkClicks.change}
-                                        isPositive={currentPlatformData.metrics.postLinkClicks.isPositive}
-                                    />
-                                    <MetricCard
-                                        label="Engagements"
-                                        value={currentPlatformData.metrics.engagements.value}
-                                        change={currentPlatformData.metrics.engagements.change}
-                                        isPositive={currentPlatformData.metrics.engagements.isPositive}
-                                    />
+                                    {socialLoading ? (
+                                        <>
+                                            <LoadingCard />
+                                            <LoadingCard />
+                                            <LoadingCard />
+                                            <LoadingCard />
+                                            <LoadingCard />
+                                            <LoadingCard />
+                                        </>
+                                    ) : socialError ? (
+                                        <div className="col-span-3">
+                                            <ErrorCard message={socialError} />
+                                        </div>
+                                    ) : realSocialMetrics ? (
+                                        <>
+                                            <MetricCard
+                                                label="Impressions"
+                                                value={realSocialMetrics.impressions.value}
+                                                change={realSocialMetrics.impressions.change}
+                                                isPositive={realSocialMetrics.impressions.isPositive}
+                                            />
+                                            <MetricCard
+                                                label="Organic Impressions"
+                                                value={realSocialMetrics.organicImpressions.value}
+                                                change={realSocialMetrics.organicImpressions.change}
+                                                isPositive={realSocialMetrics.organicImpressions.isPositive}
+                                            />
+                                            <MetricCard
+                                                label="Engagement Rate"
+                                                value={realSocialMetrics.engagementRate.value}
+                                                change={realSocialMetrics.engagementRate.change}
+                                                isPositive={realSocialMetrics.engagementRate.isPositive}
+                                            />
+                                            <MetricCard
+                                                label="Followers"
+                                                value={realSocialMetrics.followers.value}
+                                                change={realSocialMetrics.followers.change}
+                                                isPositive={realSocialMetrics.followers.isPositive}
+                                            />
+                                            <MetricCard
+                                                label="Engagements"
+                                                value={realSocialMetrics.engagements.value}
+                                                change={realSocialMetrics.engagements.change}
+                                                isPositive={realSocialMetrics.engagements.isPositive}
+                                            />
+                                        </>
+                                    ) : (
+                                        <div className="col-span-3">
+                                            <div className="text-center text-gray-500 py-8">
+                                                No data available for {selectedPlatform}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -1234,30 +1346,45 @@ const Dashboard: React.FC = () => {
                         <TabsContent value="website" className="space-y-6">
                             {/* Website Metrics Cards */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                                <MetricCard
-                                    label="Pageviews"
-                                    value={websiteMetrics.pageviews.value}
-                                    change={websiteMetrics.pageviews.change}
-                                    isPositive={websiteMetrics.pageviews.isPositive}
-                                />
-                                <MetricCard
-                                    label="Active Users"
-                                    value={websiteMetrics.activeUsers.value}
-                                    change={websiteMetrics.activeUsers.change}
-                                    isPositive={websiteMetrics.activeUsers.isPositive}
-                                />
-                                <MetricCard
-                                    label="Key Activities"
-                                    value={websiteMetrics.keyActivities.value}
-                                    change={websiteMetrics.keyActivities.change}
-                                    isPositive={websiteMetrics.keyActivities.isPositive}
-                                />
-                                <MetricCard
-                                    label="Total Events"
-                                    value={websiteMetrics.totalEvents.value}
-                                    change={websiteMetrics.totalEvents.change}
-                                    isPositive={websiteMetrics.totalEvents.isPositive}
-                                />
+                                {websiteLoading ? (
+                                    <>
+                                        <LoadingCard />
+                                        <LoadingCard />
+                                        <LoadingCard />
+                                        <LoadingCard />
+                                    </>
+                                ) : websiteError ? (
+                                    <div className="col-span-4">
+                                        <ErrorCard message={websiteError} />
+                                    </div>
+                                ) : (
+                                    <>
+                                        <MetricCard
+                                            label="Pageviews"
+                                            value={realWebsiteMetrics.pageviews.value}
+                                            change={realWebsiteMetrics.pageviews.change}
+                                            isPositive={realWebsiteMetrics.pageviews.isPositive}
+                                        />
+                                        <MetricCard
+                                            label="Active Users"
+                                            value={realWebsiteMetrics.activeUsers.value}
+                                            change={realWebsiteMetrics.activeUsers.change}
+                                            isPositive={realWebsiteMetrics.activeUsers.isPositive}
+                                        />
+                                        <MetricCard
+                                            label="Key Activities"
+                                            value={realWebsiteMetrics.keyActivities.value}
+                                            change={realWebsiteMetrics.keyActivities.change}
+                                            isPositive={realWebsiteMetrics.keyActivities.isPositive}
+                                        />
+                                        <MetricCard
+                                            label="Total Events"
+                                            value={realWebsiteMetrics.totalEvents.value}
+                                            change={realWebsiteMetrics.totalEvents.change}
+                                            isPositive={realWebsiteMetrics.totalEvents.isPositive}
+                                        />
+                                    </>
+                                )}
                             </div>
 
                             {/* Traffic Comparison Chart */}
@@ -1274,7 +1401,7 @@ const Dashboard: React.FC = () => {
                                     </div>
                                 </div>
                                 <ResponsiveContainer width="100%" height={300}>
-                                    <LineChart data={trafficData}>
+                                    <LineChart data={realTrafficData.length > 0 ? realTrafficData : trafficData}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                                         <XAxis dataKey="day" stroke="#6b7280" />
                                         <YAxis stroke="#6b7280" />
@@ -1307,6 +1434,36 @@ const Dashboard: React.FC = () => {
                                 </ResponsiveContainer>
                             </div>
 
+                            {/* Top Pages Panel */}
+                            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+                                <h3 className="text-lg font-medium text-gray-900 mb-6">Top Pages</h3>
+                                <div className="space-y-4">
+                                    {topPages && topPages.length > 0 ? (
+                                        topPages.slice(0, 5).map((page, index) => (
+                                            <div key={index} className="flex items-center justify-between">
+                                                <div className="flex-1">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{page.page_path}</p>
+                                                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                                                        <div
+                                                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                                            style={{ width: `${parseFloat(page.percentage || '0')}%` }}
+                                                        ></div>
+                                                    </div>
+                                                </div>
+                                                <div className="ml-4 text-right">
+                                                    <p className="text-sm font-semibold text-gray-900">{page.views.toLocaleString()}</p>
+                                                    <p className="text-xs text-gray-500">{parseFloat(page.percentage || '0').toFixed(1)}%</p>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center text-gray-500 py-4">
+                                            No page data available
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* Real-time Users Panel */}
                             <div className="bg-white rounded-lg border border-gray-200 p-6">
                                 <div className="flex items-center justify-between mb-6">
@@ -1318,29 +1475,35 @@ const Dashboard: React.FC = () => {
                                 </div>
 
                                 <div className="mb-6">
-                                    <div className="text-3xl font-bold text-gray-900 mb-1">{realTimeUsers.activeUsers}</div>
+                                    <div className="text-3xl font-bold text-gray-900 mb-1">{realtimeUsers?.total_users || 0}</div>
                                     <div className="text-sm text-gray-600">Active users in the past 30 minutes</div>
                                 </div>
 
                                 <div>
                                     <h4 className="text-sm font-medium text-gray-700 mb-4">Users by Country</h4>
                                     <div className="space-y-3">
-                                        {realTimeUsers.countries.map((country, index) => (
-                                            <div key={index} className="flex items-center justify-between">
-                                                <div className="flex items-center flex-1">
-                                                    <span className="text-sm text-gray-700 w-24 truncate">{country.country}</span>
-                                                    <div className="flex-1 mx-3">
-                                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                                            <div
-                                                                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                                                                style={{ width: `${country.percentage}%` }}
-                                                            ></div>
+                                        {realtimeUsers?.by_country && Array.isArray(realtimeUsers.by_country) ? 
+                                            realtimeUsers.by_country.map((country: any, index: number) => (
+                                                <div key={index} className="flex items-center justify-between">
+                                                    <div className="flex items-center flex-1">
+                                                        <span className="text-sm text-gray-700 w-24 truncate">{country.country || 'Unknown'}</span>
+                                                        <div className="flex-1 mx-3">
+                                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                                                <div
+                                                                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                                                    style={{ width: `${country.percentage || 0}%` }}
+                                                                ></div>
+                                                            </div>
                                                         </div>
+                                                        <span className="text-sm text-gray-500 w-8 text-right">{country.users || 0}</span>
                                                     </div>
-                                                    <span className="text-sm text-gray-500 w-8 text-right">{country.users}</span>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            )) : (
+                                                <div className="text-center text-gray-500 py-4">
+                                                    No country data available
+                                                </div>
+                                            )
+                                        }
                                     </div>
                                 </div>
                             </div>
@@ -1350,100 +1513,180 @@ const Dashboard: React.FC = () => {
                         </TabsContent>
 
                         <TabsContent value="edm" className="space-y-6">
-                            {/* EDM Campaign Header */}
-                            <div className="flex items-center justify-between mb-6">
-                                <div>
-                                    <h3 className="text-lg font-medium text-gray-900">Email Campaigns</h3>
-                                    <p className="text-sm text-gray-600">Recent email marketing campaigns and performance metrics</p>
+                            {/* EDM Summary Cards */}
+                            {edmSummary && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                                    <MetricCard
+                                        label="Total Campaigns"
+                                        value={edmSummary.total_campaigns?.toLocaleString() || '0'}
+                                        change="+0%"
+                                        isPositive={true}
+                                    />
+                                    <MetricCard
+                                        label="Total Recipients"
+                                        value={edmSummary.total_recipients?.toLocaleString() || '0'}
+                                        change="+0%"
+                                        isPositive={true}
+                                    />
+                                    <MetricCard
+                                        label="Avg Open Rate"
+                                        value={`${parseFloat(edmSummary.avg_open_rate || '0').toFixed(1)}%`}
+                                        change="+0%"
+                                        isPositive={true}
+                                    />
+                                    <MetricCard
+                                        label="Avg Click Rate"
+                                        value={`${parseFloat(edmSummary.avg_click_rate || '0').toFixed(1)}%`}
+                                        change="+0%"
+                                        isPositive={true}
+                                    />
                                 </div>
-                                <div className="text-sm text-gray-500">
-                                    {emailCampaigns.length} campaigns
-                                </div>
-                            </div>
+                            )}
 
-                            {/* Campaign List */}
-                            <div className="space-y-4">
-                                {emailCampaigns.map((campaign, index) => (
-                                    <div key={index} className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow duration-200">
-                                        {/* Campaign Header */}
-                                        <div className="flex items-start justify-between mb-4">
-                                            <div className="flex-1">
-                                                <div className="flex items-center space-x-3 mb-2">
-                                                    <Mail className="w-5 h-5 text-blue-500" />
-                                                    <h4 className="text-lg font-medium text-gray-900">{campaign.title}</h4>
-                                                </div>
-                                                <div className="flex items-center space-x-4 text-sm text-gray-600">
-                                                    <span>ID: {campaign.id}</span>
-                                                    <span>•</span>
-                                                    <span>Sent: {new Date(campaign.sendDate).toLocaleDateString()}</span>
-                                                    <span>•</span>
-                                                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
-                                                        {campaign.folder}
-                                                    </span>
-                                                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                                                        {campaign.status}
-                                                    </span>
+                            {/* Folder Performance */}
+                            {edmFolderStats && edmFolderStats.length > 0 && (
+                                <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+                                    <h3 className="text-lg font-medium text-gray-900 mb-6">Performance by Folder</h3>
+                                    <div className="space-y-4">
+                                        {edmFolderStats.slice(0, 5).map((folder, index) => (
+                                            <div key={index} className="flex items-center justify-between">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-sm font-medium text-gray-900">{folder.folder || 'Default'}</span>
+                                                        <span className="text-sm text-gray-500">{folder.campaign_count} campaigns</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-3 gap-4 text-sm">
+                                                        <div>
+                                                            <span className="text-gray-500">Recipients: </span>
+                                                            <span className="font-medium">{folder.total_recipients?.toLocaleString() || '0'}</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-500">Open Rate: </span>
+                                                            <span className="font-medium text-blue-600">{parseFloat(folder.avg_open_rate || '0').toFixed(1)}%</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-500">Click Rate: </span>
+                                                            <span className="font-medium text-green-600">{parseFloat(folder.avg_click_rate || '0').toFixed(1)}%</span>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-
-                                        {/* Metrics Grid */}
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                            {/* Recipients */}
-                                            <div className="bg-gray-50 rounded-lg p-4">
-                                                <div className="flex items-center mb-2">
-                                                    <Users className="w-4 h-4 text-gray-500 mr-2" />
-                                                    <span className="text-sm font-medium text-gray-600">Recipients</span>
-                                                </div>
-                                                <div className="text-2xl font-bold text-gray-900">
-                                                    {campaign.recipients.toLocaleString()}
-                                                </div>
-                                            </div>
-
-                                            {/* Opens */}
-                                            <div className="bg-blue-50 rounded-lg p-4">
-                                                <div className="flex items-center mb-2">
-                                                    <Mail className="w-4 h-4 text-blue-500 mr-2" />
-                                                    <span className="text-sm font-medium text-gray-600">Opens</span>
-                                                </div>
-                                                <div className="text-2xl font-bold text-gray-900">
-                                                    {campaign.opens.count.toLocaleString()}
-                                                </div>
-                                                <div className="text-sm text-blue-600 font-medium">
-                                                    {campaign.opens.percentage}%
-                                                </div>
-                                            </div>
-
-                                            {/* Clicks */}
-                                            <div className="bg-green-50 rounded-lg p-4">
-                                                <div className="flex items-center mb-2">
-                                                    <MousePointer className="w-4 h-4 text-green-500 mr-2" />
-                                                    <span className="text-sm font-medium text-gray-600">Clicks</span>
-                                                </div>
-                                                <div className="text-2xl font-bold text-gray-900">
-                                                    {campaign.clicks.count.toLocaleString()}
-                                                </div>
-                                                <div className="text-sm text-green-600 font-medium">
-                                                    {campaign.clicks.percentage}%
-                                                </div>
-                                            </div>
-
-                                            {/* Unsubscribed */}
-                                            <div className="bg-red-50 rounded-lg p-4">
-                                                <div className="flex items-center mb-2">
-                                                    <UserMinus className="w-4 h-4 text-red-500 mr-2" />
-                                                    <span className="text-sm font-medium text-gray-600">Unsubscribed</span>
-                                                </div>
-                                                <div className="text-2xl font-bold text-gray-900">
-                                                    {campaign.unsubscribed.count}
-                                                </div>
-                                                <div className="text-sm text-red-600 font-medium">
-                                                    {campaign.unsubscribed.percentage}%
-                                                </div>
-                                            </div>
-                                        </div>
+                                        ))}
                                     </div>
-                                ))}
+                                </div>
+                            )}
+
+                            {/* Recent Campaigns */}
+                            <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-lg font-medium text-gray-900">Recent Campaigns</h3>
+                                    <div className="text-sm text-gray-500">
+                                        {edmLoading ? 'Loading...' : `${edmRecent.length} campaigns`}
+                                    </div>
+                                </div>
+
+                                {edmLoading ? (
+                                    <div className="space-y-4">
+                                        <LoadingCard />
+                                        <LoadingCard />
+                                        <LoadingCard />
+                                    </div>
+                                ) : edmError ? (
+                                    <ErrorCard message={edmError} />
+                                ) : edmRecent && edmRecent.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {edmRecent.map((campaign, index) => (
+                                            <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow duration-200">
+                                                {/* Campaign Header */}
+                                                <div className="flex items-start justify-between mb-4">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center space-x-3 mb-2">
+                                                            <Mail className="w-5 h-5 text-blue-500" />
+                                                            <h4 className="text-lg font-medium text-gray-900">{campaign.name}</h4>
+                                                        </div>
+                                                        {campaign.subject && (
+                                                            <p className="text-sm text-gray-600 mb-2">{campaign.subject}</p>
+                                                        )}
+                                                        <div className="flex items-center space-x-4 text-sm text-gray-600">
+                                                            <span>ID: {campaign.campaign_id}</span>
+                                                            <span>•</span>
+                                                            <span>Sent: {new Date(campaign.send_date).toLocaleDateString()}</span>
+                                                            <span>•</span>
+                                                            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                                                                {campaign.folder || 'Default'}
+                                                            </span>
+                                                            <span className={`px-2 py-1 rounded-full text-xs ${
+                                                                campaign.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                                                            }`}>
+                                                                {campaign.status}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Metrics Grid */}
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                    {/* Recipients */}
+                                                    <div className="bg-gray-50 rounded-lg p-3">
+                                                        <div className="flex items-center mb-2">
+                                                            <Users className="w-4 h-4 text-gray-500 mr-2" />
+                                                            <span className="text-sm font-medium text-gray-600">Recipients</span>
+                                                        </div>
+                                                        <div className="text-xl font-bold text-gray-900">
+                                                            {campaign.recipients?.toLocaleString() || '0'}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Opens */}
+                                                    <div className="bg-blue-50 rounded-lg p-3">
+                                                        <div className="flex items-center mb-2">
+                                                            <Mail className="w-4 h-4 text-blue-500 mr-2" />
+                                                            <span className="text-sm font-medium text-gray-600">Opens</span>
+                                                        </div>
+                                                        <div className="text-xl font-bold text-gray-900">
+                                                            {campaign.opens?.toLocaleString() || '0'}
+                                                        </div>
+                                                        <div className="text-sm text-blue-600 font-medium">
+                                                            {parseFloat(campaign.open_rate || '0').toFixed(1)}%
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Clicks */}
+                                                    <div className="bg-green-50 rounded-lg p-3">
+                                                        <div className="flex items-center mb-2">
+                                                            <MousePointer className="w-4 h-4 text-green-500 mr-2" />
+                                                            <span className="text-sm font-medium text-gray-600">Clicks</span>
+                                                        </div>
+                                                        <div className="text-xl font-bold text-gray-900">
+                                                            {campaign.clicks?.toLocaleString() || '0'}
+                                                        </div>
+                                                        <div className="text-sm text-green-600 font-medium">
+                                                            {parseFloat(campaign.click_rate || '0').toFixed(1)}%
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Unsubscribed */}
+                                                    <div className="bg-red-50 rounded-lg p-3">
+                                                        <div className="flex items-center mb-2">
+                                                            <UserMinus className="w-4 h-4 text-red-500 mr-2" />
+                                                            <span className="text-sm font-medium text-gray-600">Unsubscribed</span>
+                                                        </div>
+                                                        <div className="text-xl font-bold text-gray-900">
+                                                            {campaign.unsubscriptions?.toLocaleString() || '0'}
+                                                        </div>
+                                                        <div className="text-sm text-red-600 font-medium">
+                                                            {parseFloat(campaign.unsubscribe_rate || '0').toFixed(1)}%
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-gray-500 py-8">
+                                        No campaigns available
+                                    </div>
+                                )}
                             </div>
                         </TabsContent>
 

@@ -1,42 +1,52 @@
 import { useState, useEffect } from 'react'
 import { getWebsiteData, getRealtimeUsers, getTopPages, getTrafficTrend } from '../services/supabase'
 
+// 根據實際資料庫結構 - ga4_daily_metrics
 interface WebsiteMetric {
-  id: string
+  id: number
   date: string
   page_views: number
   active_users: number
   key_events: number
   total_events: number
-  page_views_change: number
-  active_users_change: number
-  key_events_change: number
-  total_events_change: number
+  page_views_change: string | null // numeric 類型會以字串返回
+  active_users_change: string | null
+  key_events_change: string | null
+  total_events_change: string | null
+  created_at: string
+  updated_at: string
 }
 
+// 根據實際資料庫結構 - ga4_daily_top_pages
 interface TopPage {
-  id: string
+  id: number
   date: string
   page_path: string
-  page_title: string
   views: number
-  unique_views: number
+  percentage: string | null // numeric 類型會以字串返回
+  created_at: string
 }
 
+// 根據實際資料庫結構 - ga4_traffic_trend
 interface TrafficTrend {
-  id: string
+  id: number
   date: string
   visitors: number
   page_views: number
+  created_at: string
 }
 
+// 根據實際資料庫結構 - ga4_realtime_users
 interface RealtimeUsers {
-  active_users: number
+  id: number
+  total_users: number
+  by_country: any[] // jsonb 類型
+  created_at: string
 }
 
 export const useWebsiteData = () => {
   const [metrics, setMetrics] = useState<WebsiteMetric[]>([])
-  const [realtimeUsers, setRealtimeUsers] = useState<RealtimeUsers>({ active_users: 0 })
+  const [realtimeUsers, setRealtimeUsers] = useState<RealtimeUsers | null>(null)
   const [topPages, setTopPages] = useState<TopPage[]>([])
   const [trafficTrend, setTrafficTrend] = useState<TrafficTrend[]>([])
   const [loading, setLoading] = useState(true)
